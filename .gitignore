@@ -1,0 +1,64 @@
+# Среда выполнения Python и кэш
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Переменные окружения и секреты
+.env
+.env.local
+.env.*.local
+.env.*
+!.env.example
+
+# Сессии Telegram (Userbot & Bot)
+*.session
+*.session-journal
+
+# Базы данных SQLite (в корне и в папках)
+*.db
+*.sqlite
+*.sqlite3
+agent.db
+storage/*.db
+storage/agent.db
+
+# Логи и временные файлы
+*.log
+agent.log
+logs/
+*.out
+
+# Хранилище медиа / пользовательские загрузки
+storage/media/*
+!storage/media/.gitkeep
+
+# Настройки IDE и редакторов
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Системные файлы операционных систем
+.DS_Store
+Thumbs.db
+Desktop.ini

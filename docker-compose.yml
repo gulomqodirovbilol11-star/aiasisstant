@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  telegram_agent:
+    build: .
+    container_name: telegram_ai_agent
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./storage:/app/storage
+      - ./my_agent_session.session:/app/my_agent_session.session
+    stdin_open: true
+    tty: true

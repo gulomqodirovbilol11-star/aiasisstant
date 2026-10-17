@@ -1,0 +1,15 @@
+[Unit]
+Description=Telegram Personal AI Agent Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/telegram-ai-agent
+ExecStart=/opt/telegram-ai-agent/venv/bin/python main.py
+Restart=always
+RestartSec=10
+EnvironmentFile=/opt/telegram-ai-agent/.env
+
+[Install]
+WantedBy=multi-user.target
