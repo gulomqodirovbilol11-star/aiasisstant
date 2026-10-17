@@ -21,16 +21,19 @@ Ushbu hujjatda **Telegram Shaxsiy AI Agent (Userbot)** loyihasida to'liq amalga 
 - [x] **`/chats`** — So'nggi paytlarda sizga eng ko'p yozgan odamlar reytingi (Top-10 statistika).
 - [x] **`/unread`** — O'qilmagan holatda qolib ketgan shaxsiy chatlar, kanallar va guruhlar ro'yxatini chiqarish.
 
-### 🛡 4. Avtomatlashtirish va Xavfsizlik
+### 🛡 4. Avtomatlashtirish, Odob-axloq va Xavfsizlik
+- [x] **`/odob [qoida]` / `/odob ko'rsat` / `/odob tozalash`** — AI assistentiga gapirish odobi va muomala madaniyatini o'rgatish (foydalanuvchi xohlagan vaqtda yangi odob qoidalarini kiritishi mumkin).
+- [x] **Yangi Foydalanuvchi Tanishuvi (Onboarding):** Yangi foydalanuvchi botdan foydalanishdan oldin uning Ismi, Familiyasi va Yoshi aniqlanadi hamda yoshiga mos odob bilan suhbatlashiladi.
+- [x] **Spam Ogohlantirishlarini Tozalash:** Foydalanuvchini chalg'ituvchi keraksiz spam bildirishnomalari olib tashlandi.
 - [x] **`/silent on` / `/silent off`** — Tinchlik rejimi: favqulodda shoshilinch (Urgent) xabarlardan tashqari barcha bildirishnomalarni vaqtincha to'xtatib turish.
 - [x] **`/search [kalit so'z]`** — Bazadagi barcha xabarlar va ovozli xabarlar transkripsiyalari orasidan qidiruv.
 - [x] **`/blacklist add @username` / `/blacklist remove` / `/blacklist list`** — Spam tarqatuvchi yoki agent e'tibor bermasligi kerak bo'lgan akkauntlarni boshqarish.
 
 ### ⚙️ 5. Tizim va Infratuzilma
-- [x] **`/status`** — Baza hajmi, AI ulanishi, tinchlik rejimi, qora ro'yxat va xabarlar soni statistikasi.
+- [x] **`/status`** — Baza hajmi, AI ulanishi, tinchlik rejimi, qora ro'yxat, gapirish odobi va xabarlar soni statistikasi.
 - [x] **`/send @username [xabar]`** — Profil nomidan to'g'ridan-to'g'ri xabar yuborish.
 - [x] **`/help`** — Barcha mavjud buyruqlarni toifalar bo'yicha ko'rsatuvchi to'liq qo'llanma.
-- [x] **Dual Boshqaruv:** Buyruqlar ham shaxsiy Telegram **Saved Messages** ("me") orqali, ham **Telegram Bot** orqali birdek ishlaydi.
+- [x] **Dual Boshqaruv:** Buyruqlar ham shaxsiy Telegram **Saved Messages** ("me") orqali, ham **Telegram Bot** orqali birdek ishlaydi. Boshqa foydalanuvchilar esa bot orqali AI assistent bilan to'g'ridan-to'g'ri odobli suhbatlasha oladi.
 - [x] **Model Fallback:** Google Gemini API yangi modellarini (`gemini-3.8-flash`, `gemini-3.7-flash`, `gemini-flash-latest`) avtomatik tanlash va 503 xatoliklarda retry qilish mexanizmi.
 
 ---

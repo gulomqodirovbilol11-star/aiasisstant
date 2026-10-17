@@ -44,7 +44,10 @@ def register_command_handlers(client: TelegramClient, db: Database, ai_service: 
                     "├ <code>/whois @username</code> — Foydalanuvchi haqida to'liq dosye va statistika\n"
                     "├ <code>/chats</code> — Sizga eng ko'p yozgan odamlar reytingi (Top-10)\n"
                     "└ <code>/unread</code> — O'qilmagan qolib ketgan chat va kanallar\n\n"
-                    "🛡 <b>4. Avtomatlashtirish va Xavfsizlik:</b>\n"
+                    "🛡 <b>4. Avtomatlashtirish va Odob-axloq:</b>\n"
+                    "├ <code>/odob [qoida]</code> — AI assistentiga yangi gapirish odobini o'rgatish\n"
+                    "├ <code>/odob ko'rsat</code> — Amaldagi gapirish odobi qoidalarini ko'rish\n"
+                    "├ <code>/odob tozalash</code> — Standart gapirish odobiga qaytarish\n"
                     "├ <code>/autoreply on|off</code> — AI avtomatik javob berishini yoqish/o'chirish\n"
                     "├ <code>/autoreply prompt [matn]</code> — AI qanday javob berishi bo'yicha ko'rsatma berish\n"
                     "├ <code>/autoreply status</code> — Avtomatik javob holati va sozlamalarini ko'rish\n"
@@ -580,6 +583,38 @@ def register_command_handlers(client: TelegramClient, db: Database, ai_service: 
                         parse_mode="html"
                     )
 
+            # /odob
+            elif cmd in ("/odob", "/etiquette"):
+                subcmd = args[0].lower() if args else ""
+                if not args or subcmd in ("ko'rsat", "status", "list", "show"):
+                    current_eti = await db.get_global_etiquette()
+                    await event.reply(
+                        "🗣 <b>AI Assistenti Gapirish Odobi Sozlamalari:</b>\n\n"
+                        f"📜 <b>Hozirgi amaldagi odob qoidasi:</b>\n<i>{current_eti}</i>\n\n"
+                        "💡 <b>Qanday o'rgatish mumkin?</b>\n"
+                        "├ <code>/odob [qoida matni]</code> — yangi gapirish odobini o'rgatish\n"
+                        "│   <i>Misol: /odob Doimo 'Siz' deb gapir, o'ta xushmuomala, muloyim va samimiy bo'l</i>\n"
+                        "└ <code>/odob tozalash</code> — standart odob qoidalariga qaytarish",
+                        parse_mode="html"
+                    )
+                elif subcmd in ("tozalash", "reset", "clear"):
+                    await db.set_global_etiquette(None)
+                    default_eti = await db.get_global_etiquette()
+                    await event.reply(
+                        "🔄 <b>Gapirish odobi standart holatga qaytarildi:</b>\n\n"
+                        f"<i>{default_eti}</i>",
+                        parse_mode="html"
+                    )
+                else:
+                    new_rules = " ".join(args).strip()
+                    await db.set_global_etiquette(new_rules)
+                    await event.reply(
+                        "✅ <b>AI assistentiga yangi gapirish odobi muvaffaqiyatli o'rgatildi!</b>\n\n"
+                        f"📝 <b>Yangi qoidalar:</b>\n<i>{new_rules}</i>\n\n"
+                        "Bundan keyin assistent barcha javoblarida va suhbatlarida ushbu odob qoidalariga qat'iy rioya qiladi.",
+                        parse_mode="html"
+                    )
+
             # =========================================================
             # 5. TIZIM VA YUBORISH BUYRUQLARI
             # =========================================================
@@ -590,11 +625,14 @@ def register_command_handlers(client: TelegramClient, db: Database, ai_service: 
                 ai_status = "🟢 Faol" if ai_service.client else "🔴 Ulanmagan (.env tekshiring)"
                 silent_status = "🔕 Yoqilgan (Tinchlik)" if stats.get("silent_mode") else "🔔 O'chirilgan (Normal)"
                 auto_reply_status = "🟢 Yoqilgan (Faol)" if stats.get("auto_reply_mode") else "🔴 O'chirilgan"
+                global_eti = await db.get_global_etiquette()
+                eti_preview = global_eti[:45] + "..." if len(global_eti) > 45 else global_eti
 
                 status_text = (
                     "📊 <b>Agent Tizim Holati:</b>\n\n"
                     f"├ <b>AI Modeli:</b> {ai_service.model_name} ({ai_status})\n"
                     f"├ <b>AI Avto-javob (Auto-Reply):</b> {auto_reply_status}\n"
+                    f"├ <b>Gapirish odobi:</b> <i>{eti_preview}</i>\n"
                     f"├ <b>Tinchlik rejimi (Silent):</b> {silent_status}\n"
                     f"├ <b>Jami qayd etilgan xabarlar:</b> {stats['total_messages']}\n"
                     f"├ <b>O'chirilgan xabarlar:</b> {stats['deleted_messages']}\n"
@@ -647,12 +685,136 @@ def register_command_handlers(client: TelegramClient, db: Database, ai_service: 
         if text.startswith("/"):
             await execute_command(event, text)
 
-    # 2. Agar bot_client sozlangan bo'lsa, Telegram Bot orqali buyruqlarni tinglash
-    if bot_client and config.MY_TELEGRAM_ID:
+    # 2. Agar bot_client sozlangan bo'lsa, Telegram Bot orqali barcha foydalanuvchilar bilan ishlash
+    if bot_client:
         @bot_client.on(events.NewMessage)
-        async def on_bot_command(event: events.NewMessage.Event):
-            if event.sender_id != config.MY_TELEGRAM_ID:
+        async def on_bot_message(event: events.NewMessage.Event):
+            sender_id = event.sender_id
+            if not sender_id:
                 return
+
             text = (event.raw_text or "").strip()
-            if text.startswith("/"):
-                await execute_command(event, text)
+
+            # -------------------------------------------------------------
+            # A) AKKAUNT EGASI (MY_TELEGRAM_ID):
+            # -------------------------------------------------------------
+            if config.MY_TELEGRAM_ID and sender_id == config.MY_TELEGRAM_ID:
+                if text.startswith("/"):
+                    await execute_command(event, text)
+                    return
+                # Agar buyruq bo'lmasa, egasi bot bilan to'g'ridan-to'g'ri AI orqali suhbatlashishi mumkin:
+                sender = await event.get_sender()
+                owner_name = getattr(sender, "first_name", "") or "Egasi"
+                global_etiquette = await db.get_global_etiquette()
+                async with bot_client.action(event.chat_id, "typing"):
+                    reply = await ai_service.generate_chat_reply(
+                        user_name=owner_name,
+                        user_age=0,
+                        message_text=text,
+                        etiquette_rules=global_etiquette
+                    )
+                if reply:
+                    await event.reply(reply)
+                return
+
+            # -------------------------------------------------------------
+            # B) BOSHQA FOYDALANUVCHILAR ("Kimdur yana ishlatadigan bo'lsa"):
+            # -------------------------------------------------------------
+            sender = await event.get_sender()
+            first_name = getattr(sender, "first_name", "") or ""
+            last_name = getattr(sender, "last_name", "") or ""
+            username = getattr(sender, "username", None)
+
+            # 1. Foydalanuvchi profilini tekshirish (ism, familiya, yosh)
+            profile = await db.get_user_profile(sender_id)
+            is_registered = bool(profile and profile.get("is_registered") and profile.get("age", 0) > 0)
+            user_age = profile.get("age", 0) if profile else 0
+            user_name = profile.get("custom_name") or f"{profile.get('first_name', '')} {profile.get('last_name', '')}".strip() if profile else ""
+
+            # Agar foydalanuvchi hali to'liq ro'yxatdan o'tmagan bo'lsa:
+            if not is_registered or not user_name:
+                # Agar /start yuborgan bo'lsa yoki birinchi xabar bo'lsa:
+                if text in ("/start", "/help") or not profile:
+                    if not profile:
+                        await db.upsert_user(sender_id, username, first_name, last_name)
+                    welcome_msg = (
+                        f"👋 <b>Assalomu alaykum, {first_name or 'hurmatli foydalanuvchi'}!</b>\n\n"
+                        "Men aqlli <b>Telegram AI Assistentman</b>. Sizga eng yaxshi, samimiy va odobli yordam ko'rsatishim uchun, "
+                        "avval siz bilan yaqindan tanishib olishim kerak 😊\n\n"
+                        "👉 <b>Iltimos, ismingiz, familiyangiz va yoshingizni yozing:</b>\n"
+                        "<i>(Masalan: Ali Valiyev, 22 yosh)</i>"
+                    )
+                    await event.reply(welcome_msg, parse_mode="html")
+                    return
+
+                # Matndan Ism, Familiya va Yoshni ajratib olish
+                parsed = await ai_service.parse_user_info(text)
+                if parsed and parsed.get("first_name") and parsed.get("age", 0) > 0:
+                    fn = parsed["first_name"]
+                    ln = parsed.get("last_name") or last_name or ""
+                    ag = parsed["age"]
+                    full_n = f"{fn} {ln}".strip()
+                    await db.save_user_profile(
+                        user_id=sender_id,
+                        first_name=fn,
+                        last_name=ln,
+                        age=ag,
+                        custom_name=full_n,
+                        username=username
+                    )
+                    reg_success = (
+                        f"✅ <b>Tanishganimdan juda mamnunman, {full_n}! ({ag} yosh)</b>\n\n"
+                        "Ma'lumotlaringiz muvaffaqiyatli saqlandi. Endi siz menga xohlagan savolingizni berishingiz yoki "
+                        "suhbatlashishingiz mumkin.\n\n"
+                        "💡 <b>Eslatma:</b> Menga xohlagan payt gapirish odobimni o'rgatishingiz mumkin "
+                        "<i>(masalan: 'menga faqat sizlab gapir' yoki 'rasmiy uslubda javob ber')</i>."
+                    )
+                    await event.reply(reg_success, parse_mode="html")
+                    return
+                else:
+                    prompt_missing = (
+                        "⚠️ <b>Iltimos, ism, familiyangiz va yoshingizni to'liqroq yozing.</b>\n\n"
+                        "Shunda sizning yoshingizga mos, hurmat va odob bilan javob bera olaman 😊\n"
+                        "<i>Misol: <b>Jasur Karimov, 24 yosh</b></i>"
+                    )
+                    await event.reply(prompt_missing, parse_mode="html")
+                    return
+
+            # 2. Agar foydalanuvchi ro'yxatdan o'tgan bo'lsa:
+            # A) Gapirish odobini o'rgatyaptimi?
+            is_teaching, etiquette_rule = ai_service.check_is_teaching_etiquette(text)
+            if is_teaching:
+                await db.update_user_etiquette(sender_id, etiquette_rule)
+                confirm_eti = (
+                    "✅ <b>Tushundim, ko'rsatmani qabul qildim!</b>\n\n"
+                    f"🗣 <b>Gapirish odobimga yangi qoida qo'shildi:</b>\n<i>\"{etiquette_rule}\"</i>\n\n"
+                    "Bundan keyingi barcha javoblarimda siz o'rgatgan ushbu odob qoidalariga qat'iy rioya qilaman!"
+                )
+                await event.reply(confirm_eti, parse_mode="html")
+                return
+
+            # B) Agar /start yoki /help bossa:
+            if text in ("/start", "/help"):
+                await event.reply(
+                    f"👋 <b>Salom, {user_name}!</b>\n\n"
+                    "Sizga qanday yordam bera olaman? Xohlagan savolingizni berishingiz mumkin.\n"
+                    "<i>(Eslatma: Menga o'zingizga ma'qul gapirish odobini o'rgatishingiz mumkin, masalan: 'menga faqat sizlab gapir')</i>",
+                    parse_mode="html"
+                )
+                return
+
+            # C) AI bilan to'g'ridan-to'g'ri suhbat:
+            async with bot_client.action(event.chat_id, "typing"):
+                global_etiquette = await db.get_global_etiquette()
+                user_etiquette = profile.get("etiquette_rules")
+                combined_etiquette = f"{global_etiquette}\n{user_etiquette}" if user_etiquette else global_etiquette
+
+                reply = await ai_service.generate_chat_reply(
+                    user_name=user_name,
+                    user_age=user_age,
+                    message_text=text,
+                    etiquette_rules=combined_etiquette
+                )
+
+            if reply:
+                await event.reply(reply)

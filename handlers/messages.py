@@ -197,17 +197,9 @@ def register_message_handlers(client: TelegramClient, db: Database, ai_service: 
                         )
                         await notify_user(urgency_alert)
 
-                # Spam filtri (faqat shaxsiy chatlar uchun va silent bo'lmaganda)
-                if config.ENABLE_SPAM_FILTER and chat_type == "user" and not is_silent and text and not is_alert_format:
-                    is_spam, spam_reason = await ai_service.check_spam(text, sender_info)
-                    if is_spam:
-                        spam_alert = (
-                            f"🛡 <b>Ehtimoliy Spam / Reklama:</b>\n"
-                            f"├ <b>Kimdan:</b> {sender_name} (@{sender_username or 'yoq'})\n"
-                            f"├ <b>Sabab:</b> {spam_reason}\n"
-                            f"└ <b>Matn:</b> {text[:300]}"
-                        )
-                        await notify_user(spam_alert)
+                # Spam tekshiruvi (faqat avto-javob spamga berilmasligi uchun, foydalanuvchiga esa ogohlantirish xabari yuborilmaydi)
+                if config.ENABLE_SPAM_FILTER and chat_type == "user" and text and not is_alert_format:
+                    is_spam, _ = await ai_service.check_spam(text, sender_info)
 
                 # -------------------------------------------------------------
                 # 🤖 AI Avtomatik javob berish (Auto-Reply)
@@ -233,13 +225,19 @@ def register_message_handlers(client: TelegramClient, db: Database, ai_service: 
                                     custom_prompt = await db.get_auto_reply_prompt()
                                     owner_name = getattr(me, "first_name", "") or "Egasi"
 
+                                    # Gapirish odobi qoidalarini olish
+                                    global_etiquette = await db.get_global_etiquette()
+                                    user_etiquette = await db.get_user_etiquette(sender_id) if sender_id else None
+                                    etiquette = f"{global_etiquette}\n{user_etiquette}" if user_etiquette else global_etiquette
+
                                     reply_text = await ai_service.generate_auto_reply(
                                         sender_name=sender_name,
                                         message_text=incoming_content,
                                         context=context,
                                         custom_instructions=custom_prompt,
                                         owner_name=owner_name,
-                                        media_path=media_path if is_voice_or_audio else None
+                                        media_path=media_path if is_voice_or_audio else None,
+                                        etiquette_rules=etiquette
                                     )
 
                                 if reply_text and reply_text.strip():

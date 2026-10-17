@@ -46,10 +46,26 @@ class Database:
                     username TEXT,
                     first_name TEXT,
                     last_name TEXT,
+                    age INTEGER DEFAULT 0,
+                    custom_name TEXT,
+                    etiquette_rules TEXT,
+                    is_registered INTEGER DEFAULT 0,
                     first_seen TEXT,
                     last_seen TEXT
                 );
             """)
+
+            # users jadvaliga yangi ustunlarni qo'shish (mavjud baza uchun migratsiya)
+            for col_name, col_type in [
+                ("age", "INTEGER DEFAULT 0"),
+                ("custom_name", "TEXT"),
+                ("etiquette_rules", "TEXT"),
+                ("is_registered", "INTEGER DEFAULT 0")
+            ]:
+                try:
+                    await db.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_type};")
+                except Exception:
+                    pass
 
             # Chatlar jadvali
             await db.execute("""
@@ -606,3 +622,83 @@ class Database:
             "auto_reply_mode": auto_reply_mode,
             "db_size_mb": round(db_size_mb, 2)
         }
+
+    async def get_user_profile(self, user_id: int) -> Optional[Dict[str, Any]]:
+        """Foydalanuvchi profilini olish (ism, familiya, yosh, odob qoidalari)."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("""
+                SELECT user_id, username, first_name, last_name, age, custom_name, etiquette_rules, is_registered
+                FROM users
+                WHERE user_id = ?
+            """, (user_id,)) as cursor:
+                row = await cursor.fetchone()
+                return dict(row) if row else None
+
+    async def save_user_profile(
+        self,
+        user_id: int,
+        first_name: str,
+        last_name: str = "",
+        age: int = 0,
+        custom_name: str = "",
+        username: str = None
+    ) -> None:
+        """Foydalanuvchi ma'lumotlarini (ism, familiya, yosh) to'liq saqlash."""
+        now_str = datetime.now(timezone.utc).isoformat()
+        full_name = custom_name or f"{first_name} {last_name}".strip() or "Foydalanuvchi"
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("""
+                INSERT INTO users (user_id, username, first_name, last_name, age, custom_name, is_registered, first_seen, last_seen)
+                VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    username = coalesce(excluded.username, users.username),
+                    first_name = excluded.first_name,
+                    last_name = excluded.last_name,
+                    age = excluded.age,
+                    custom_name = excluded.custom_name,
+                    is_registered = 1,
+                    last_seen = excluded.last_seen;
+            """, (user_id, username, first_name, last_name, age, full_name, now_str, now_str))
+            await db.commit()
+
+    async def update_user_etiquette(self, user_id: int, etiquette_rules: str) -> None:
+        """Foydalanuvchi tomonidan o'rgatilgan shaxsiy gapirish odobi qoidalarini saqlash."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("""
+                UPDATE users SET etiquette_rules = ? WHERE user_id = ?;
+            """, (etiquette_rules, user_id))
+            await db.commit()
+
+    async def get_user_etiquette(self, user_id: int) -> Optional[str]:
+        """Foydalanuvchining shaxsiy gapirish odobi qoidalarini olish."""
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute("SELECT etiquette_rules FROM users WHERE user_id = ?", (user_id,)) as cursor:
+                row = await cursor.fetchone()
+                return row[0] if row and row[0] else None
+
+    async def set_global_etiquette(self, rules: Optional[str]) -> None:
+        """Umumiy gapirish odobi qoidalarini sozlash (/odob buyrug'i orqali)."""
+        async with aiosqlite.connect(self.db_path) as db:
+            if rules and rules.strip():
+                await db.execute("""
+                    INSERT INTO settings (key, value) VALUES ('global_etiquette', ?)
+                    ON CONFLICT(key) DO UPDATE SET value = excluded.value;
+                """, (rules.strip(),))
+            else:
+                await db.execute("DELETE FROM settings WHERE key = 'global_etiquette';")
+            await db.commit()
+
+    async def get_global_etiquette(self) -> str:
+        """Umumiy gapirish odobi qoidalarini olish."""
+        default_etiquette = (
+            "Har doim xushmuomala, odobli, samimiy va madaniyatli bo'ling. "
+            "Suhbatdoshga hurmat bilan, kattalarga va notanishlarga doim 'Siz' deb murojaat qiling. "
+            "Hech qachon qo'pollik yoki haqorat qilmang. O'zbekona odob-axloq va mehmondo'stlik tamoyillariga amal qiling."
+        )
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute("SELECT value FROM settings WHERE key = 'global_etiquette'") as cursor:
+                row = await cursor.fetchone()
+                if row and row[0]:
+                    return row[0]
+        return default_etiquette

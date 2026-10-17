@@ -1,4 +1,6 @@
 import os
+import re
+import json
 import logging
 from typing import Optional, List, Dict, Any, Tuple
 from pathlib import Path
@@ -317,11 +319,12 @@ REASON: Sababi (o'zbekcha qisqa)
         context: Optional[List[Dict[str, Any]]] = None,
         custom_instructions: Optional[str] = None,
         owner_name: str = "",
-        media_path: Optional[str] = None
+        media_path: Optional[str] = None,
+        etiquette_rules: str = ""
     ) -> str:
         """
         Foydalanuvchining shaxsiy chatiga kelgan xabarga (matn yoki ovozli xabar)
-        AI orqali avtomatik aqlli javob qaytarish.
+        AI orqali avtomatik aqlli javob qaytarish (o'rgatilgan gapirish odobiga rioya qilgan holda).
         """
         if not self.client:
             return ""
@@ -346,6 +349,10 @@ REASON: Sababi (o'zbekcha qisqa)
         if custom_instructions and custom_instructions.strip():
             custom_block = f"\nMAXSUS KO'RSATMA (EGASIDAN):\n{custom_instructions.strip()}\n"
 
+        etiquette_block = ""
+        if etiquette_rules and etiquette_rules.strip():
+            etiquette_block = f"\nAMALDAGI GAPIRISH ODOBI VA AXLOQ QOIDALARI:\n{etiquette_rules.strip()}\n"
+
         is_voice = bool(media_path and os.path.exists(media_path))
         if is_voice:
             if message_text:
@@ -359,18 +366,19 @@ REASON: Sababi (o'zbekcha qisqa)
 Siz {owner_info} Telegramda kelgan xabarlarga javob beruvchi aqlli va samimiy shaxsiy AI yordamchisiz.
 
 {context_str}{media_info}
-{custom_block}
+{custom_block}{etiquette_block}
 Vazifangiz:
 Ushbu xabarga tabiiy, samimiy, insoniylikni saqlagan holda mos va to'g'ri javob bering.
 
 Qoidalar:
-1. Suhbatdosh qaysi tilda gapirgan/yozgan bo'lsa (o'zbek, rus, ingliz va h.k.), xuddi o'sha tilda javob qaytaring.
-2. Javobingiz Telegram chatiga mos bo'lsin: ixcham, lo'nda, samimiy va ortiqcha cho'zmasdan.
-3. Agar u salom bersa yoki oddiy hol-ahvol so'rasa, muloyim alik oling va nima yordam bera olishingizni bildiring.
-4. Agar savol bersa, aniq va foydali javob bering.
-5. Agar shaxsiy sir, parol, pul, to'lov yoki faqat {owner_name or 'akkaunt egasi'}ning o'zi hal qila oladigan muhim masala so'ralsa, siz AI yordamchisi ekanligingizni va xabarni unga yetkazishingizni, tez orada o'zi bog'lanishini muloyim tushuntiring.
-6. Hech qachon o'zingizdan yolg'on fakt yoki quruq va'dalar to'qimang.
-7. Faqat to'g'ridan-to'g'ri yuboriladigan javob matnini yozing. Hech qanday "Javob:", "Assistent:" yoki qo'shtirnoq kabi keraksiz so'zlarni qo'shmang.
+1. Belgilangan gapirish odobi va axloq qoidalariga qat'iy rioya qiling.
+2. Suhbatdosh qaysi tilda gapirgan/yozgan bo'lsa (o'zbek, rus, ingliz va h.k.), xuddi o'sha tilda javob qaytaring.
+3. Javobingiz Telegram chatiga mos bo'lsin: ixcham, lo'nda, samimiy va ortiqcha cho'zmasdan.
+4. Agar u salom bersa yoki oddiy hol-ahvol so'rasa, muloyim alik oling va nima yordam bera olishingizni bildiring.
+5. Agar savol bersa, aniq va foydali javob bering.
+6. Agar shaxsiy sir, parol, pul, to'lov yoki faqat {owner_name or 'akkaunt egasi'}ning o'zi hal qila oladigan muhim masala so'ralsa, siz AI yordamchisi ekanligingizni va xabarni unga yetkazishingizni, tez orada o'zi bog'lanishini muloyim tushuntiring.
+7. Hech qachon o'zingizdan yolg'on fakt yoki quruq va'dalar to'qimang.
+8. Faqat to'g'ridan-to'g'ri yuboriladigan javob matnini yozing. Hech qanday "Javob:", "Assistent:" yoki qo'shtirnoq kabi keraksiz so'zlarni qo'shmang.
 """
 
         uploaded = None
@@ -397,6 +405,149 @@ Qoidalar:
                     self.client.files.delete(name=uploaded.name)
                 except Exception:
                     pass
+
+    async def parse_user_info(self, text: str) -> Optional[Dict[str, Any]]:
+        """
+        Foydalanuvchi matnidan Ism, Familiya va Yoshni aniqlash.
+        """
+        if not text:
+            return None
+
+        # 1. Regex orqali yosh va ismni aniqlashga urinish (zaxira mexanizm)
+        match_age = re.search(r'\b(\d{1,2})\b(?:\s*(?:yosh|da|yoshda|лет|years?))?', text, re.IGNORECASE)
+        fallback_age = int(match_age.group(1)) if match_age and 5 <= int(match_age.group(1)) <= 120 else 0
+
+        text_clean = re.sub(r'[\d.,!?:;/\(\)]', ' ', text)
+        words = [w.strip() for w in text_clean.split() if len(w.strip()) > 1]
+        
+        # Umumiy so'zlarni filtrlash
+        stopwords = {"ismim", "familiyam", "men", "yoshim", "yoshdaman", "yoshda", "salom", "assalomu", "alaykum"}
+        meaningful_words = [w for w in words if w.lower() not in stopwords]
+
+        fallback_first_name = meaningful_words[0].capitalize() if len(meaningful_words) >= 1 else ""
+        fallback_last_name = meaningful_words[1].capitalize() if len(meaningful_words) >= 2 else ""
+
+        # 2. Agar Gemini mavjud bo'lsa, aniqroq tahlil qilish
+        if self.client:
+            prompt = f"""
+Quyidagi matndan insonning Ismi (first_name), Familiyasi (last_name) va Yoshini (age) aniqlang.
+Matn: "{text}"
+
+Javobni FAQAT quyidagi JSON formatida qaytaring, boshqa hech qanday so'z yoki belgi yozmang:
+{{
+    "first_name": "Ismi (agar topilmasa bo'sh string)",
+    "last_name": "Familiyasi (agar topilmasa bo'sh string)",
+    "age": 0 (agar topilsa butun son, aks holda 0)
+}}
+"""
+            try:
+                res = await self._call_gemini(prompt)
+                clean_json = re.sub(r'```json\s*', '', res)
+                clean_json = re.sub(r'```\s*', '', clean_json).strip()
+                data = json.loads(clean_json)
+                fn = str(data.get("first_name", "")).strip()
+                ln = str(data.get("last_name", "")).strip()
+                ag = int(data.get("age", 0))
+
+                if fn or ag > 0:
+                    return {
+                        "first_name": fn or fallback_first_name,
+                        "last_name": ln or fallback_last_name,
+                        "age": ag if ag > 0 else fallback_age
+                    }
+            except Exception as e:
+                logger.debug(f"AI orqali foydalanuvchi ma'lumotlarini aniqlashda xato: {e}")
+
+        # Agar AI bo'lmasa yoki xato bersa, fallback natijasini qaytaramiz
+        if fallback_first_name or fallback_age > 0:
+            return {
+                "first_name": fallback_first_name,
+                "last_name": fallback_last_name,
+                "age": fallback_age
+            }
+        return None
+
+    def check_is_teaching_etiquette(self, text: str) -> Tuple[bool, str]:
+        """
+        Foydalanuvchi assistentga gapirish odobini o'rgatmoqchimi yoki yo'qligini aniqlash.
+        """
+        if not text:
+            return False, ""
+
+        t = text.strip()
+        lower_t = t.lower()
+
+        if lower_t.startswith("/odob ") or lower_t.startswith("/etiquette "):
+            rule = t.split(maxsplit=1)[1].strip()
+            return True, rule
+
+        teaching_keywords = [
+            "gapirish odobi", "odob qoidasi", "menga sizlab gapir", "senlab gapir",
+            "bundan keyin", "bunday gapir", "odob bilan gapir", "odobliroq bo'l",
+            "muloyimroq gapir", "rasmiy uslubda gapir", "hazillashib gapir",
+            "menga shunday muomala qil", "gaplashish odobing", "odobingni to'g'irla",
+            "odob qoidalari"
+        ]
+
+        for kw in teaching_keywords:
+            if kw in lower_t:
+                return True, t
+
+        return False, ""
+
+    async def generate_chat_reply(
+        self,
+        user_name: str,
+        user_age: int,
+        message_text: str,
+        context: Optional[List[Dict[str, Any]]] = None,
+        etiquette_rules: str = ""
+    ) -> str:
+        """
+        Foydalanuvchi bilan to'g'ridan-to'g'ri AI suhbatini yuritish (Ism, Yosh va Odob qoidalariga qat'iy rioya qilgan holda).
+        """
+        if not self.client:
+            return "Kechirasiz, hozirda AI xizmati vaqtincha faol emas. Iltimos, keyinroq urinib ko'ring."
+
+        context_str = ""
+        if context:
+            lines = []
+            for m in context[-6:]:
+                s = "Assistent" if m.get("is_outgoing") else user_name
+                t = m.get("text") or ""
+                if t:
+                    lines.append(f"{s}: {t}")
+            if lines:
+                context_str = "Oldingi suhbat konteksti:\n" + "\n".join(lines) + "\n\n"
+
+        prompt = f"""
+Siz samimiy, aqlli, yuksak madaniyatli shaxsiy Telegram AI assistentsiz.
+Hozir siz bilan quyidagi foydalanuvchi suhbatlashmoqda:
+- Ismi: {user_name}
+- Yoshi: {f"{user_age} yoshda" if user_age else "Noma'lum"}
+
+AMALDAGI GAPIRISH ODOBI VA MUOMALA QOIDALARI:
+{etiquette_rules or "Har doim xushmuomala, odobli, samimiy bo'ling. Suhbatdoshga hurmat bilan, kattalarga va notanishlarga doim 'Siz' deb murojaat qiling."}
+
+{context_str}Foydalanuvchining yangi xabari:
+"{message_text}"
+
+Vazifangiz:
+1. Suhbatdoshning yoshiga va kiritilgan gapirish odobiga qat'iy rioya qiling. Agar yoshi kattaroq yoki notanish bo'lsa, 'Siz' deb xushmuomala bo'ling.
+2. Agar foydalanuvchi sizga gapirish odobingizni o'rgatsa yoki o'zgartirsa (masalan: 'menga faqat sizlab gapir', 'do'stona gapir' va h.k.), buni ochiqko'ngillik bilan qabul qiling va unga rioya qilishingizni bildiring.
+3. Javobingiz Telegram chatiga mos ravishda ixcham, samimiy, jonli va tushunarli bo'lsin.
+4. Foydalanuvchi qaysi tilda murojaat qilsa (o'zbek, rus, ingliz), o'sha tilda javob bering.
+5. Faqat to'g'ridan-to'g'ri javob matnini yozing. "Assistent:" yoki qo'shtirnoq qo'shmang.
+"""
+        try:
+            reply = await self._call_gemini(prompt)
+            cleaned = reply.strip()
+            if cleaned.startswith('"') and cleaned.endswith('"'):
+                cleaned = cleaned[1:-1].strip()
+            return cleaned
+        except Exception as e:
+            logger.error(f"Chat javobini yaratishda xatolik: {e}")
+            return "Kechirasiz, xabaringizni qayta ishlashda kutilmagan xatolik yuz berdi."
 
     async def _call_gemini(self, prompt: str) -> str:
         """Gemini modeliga matnli so'rov yuborish."""
