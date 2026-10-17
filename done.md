@@ -21,7 +21,9 @@ Ushbu hujjatda **Telegram Shaxsiy AI Agent (Userbot)** loyihasida to'liq amalga 
 - [x] **`/chats`** — So'nggi paytlarda sizga eng ko'p yozgan odamlar reytingi (Top-10 statistika).
 - [x] **`/unread`** — O'qilmagan holatda qolib ketgan shaxsiy chatlar, kanallar va guruhlar ro'yxatini chiqarish.
 
-### 🛡 4. Avtomatlashtirish, Odob-axloq va Xavfsizlik
+### 🛡 4. Avtomatlashtirish, Odob-axloq va Ovozli Xabarlar
+- [x] **🎙 Aqlli Ovozli Xabarlarni O'qish va Javob Berish:** Shaxsiy chatga yuborilgan ovozli xabarlar (voice note, audio) Gemini 3.8 Flash orqali real vaqtda aniq matnga o'giriladi, Saved Messages'da matn qilib ko'rsatiladi va AI ovozli xabardagi gaplarga qarab to'liq, muloyim javob qaytaradi.
+- [x] **🤖 Avtomatik Javob Berish (Smart Auto-Reply):** Boshqalar yozgan barcha kiruvchi xabarlar va ovozli xabarlarga AI avtomatik tarzda, gapirish odobiga rioya qilgan holda javob beradi.
 - [x] **`/odob [qoida]` / `/odob ko'rsat` / `/odob tozalash`** — AI assistentiga gapirish odobi va muomala madaniyatini o'rgatish (foydalanuvchi xohlagan vaqtda yangi odob qoidalarini kiritishi mumkin).
 - [x] **Yangi Foydalanuvchi Tanishuvi (Onboarding):** Yangi foydalanuvchi botdan foydalanishdan oldin uning Ismi, Familiyasi va Yoshi aniqlanadi hamda yoshiga mos odob bilan suhbatlashiladi.
 - [x] **Spam Ogohlantirishlarini Tozalash:** Foydalanuvchini chalg'ituvchi keraksiz spam bildirishnomalari olib tashlandi.

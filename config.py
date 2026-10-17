@@ -27,7 +27,7 @@ class Settings(BaseSettings):
 
     # Google Gemini AI sozlamalari
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-3.1-flash-lite"
+    GEMINI_MODEL: str = "gemini-3.8-flash"
 
     # Rejalashtiruvchi sozlamalari
     DIGEST_TIME: str = "21:00"

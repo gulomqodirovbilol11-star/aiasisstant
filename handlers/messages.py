@@ -154,6 +154,15 @@ def register_message_handlers(client: TelegramClient, db: Database, ai_service: 
                             voice_transcript = await ai_service.transcribe_voice(save_path)
                             if voice_transcript:
                                 logger.info(f"Ovozli xabar transkripsiyasi ({chat_id}): {voice_transcript[:60]}...")
+                                # Akkaunt egasiga Saved Messages orqali ovozli xabar mazmunini matn qilib ko'rsatish
+                                if not is_silent and not is_outgoing:
+                                    voice_alert = (
+                                        f"🎙 <b>Yangi Ovozli Xabar:</b>\n"
+                                        f"├ <b>Kimdan:</b> {sender_name} (@{sender_username or 'mavjud_emas'})\n"
+                                        f"├ <b>Chat:</b> {chat_title}\n"
+                                        f"└ <b>Transkripsiya (Mazmuni):</b>\n<i>\"{voice_transcript}\"</i>"
+                                    )
+                                    await notify_user(voice_alert)
                 except Exception as e:
                     logger.warning(f"Media yuklab olishda xatolik: {e}")
 

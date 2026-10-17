@@ -229,44 +229,67 @@ REASON: Bir jumla bilan sababi (o'zbekcha)
 
     async def transcribe_voice(self, file_path: str) -> Optional[str]:
         """
-        Ovozli xabar (voice note / audio) ni Gemini yordamida matnga aylantirish.
+        Ovozli xabar (voice note / audio / video note) ni Gemini 3.8 Flash yordamida matnga aylantirish.
         """
         if not self.client or not os.path.exists(file_path):
             return None
 
+        ext = Path(file_path).suffix.lower()
+        mime_map = {
+            ".ogg": "audio/ogg",
+            ".opus": "audio/ogg",
+            ".mp3": "audio/mp3",
+            ".wav": "audio/wav",
+            ".m4a": "audio/mp4",
+            ".mp4": "video/mp4",
+            ".dat": "audio/ogg"
+        }
+        mime_type = mime_map.get(ext, "audio/ogg")
+
         prompt = (
-            "Ushbu ovozli xabarni matnga o'giring (transkripsiya qiling). "
-            "Faqat aytilgan gaplarni o'zbek, rus yoki ingliz tilida asliga muvofiq yozing. "
-            "Hech qanday kirish yoki qo'shimcha so'z qo'shmang."
+            "Ushbu audio/ovozli xabarni diqqat bilan tinglab, unda aytilgan gaplarni to'liq matnga o'giring (transkripsiya qiling). "
+            "Faqat so'zlovchi aytgan gaplarni aniq va asliga muvofiq yozing. "
+            "Hech qanday kirish, izoh yoki ortiqcha so'z qo'shmang."
         )
 
-        candidate_models = [self.model_name]
-        for m in ["gemini-3.1-flash-lite", "gemini-flash-lite-latest", "gemini-3.5-flash-lite", "gemini-3-flash-preview"]:
-            if m not in candidate_models:
-                candidate_models.append(m)
-
-        uploaded = None
         try:
-            if hasattr(self.client, "files"):
-                uploaded = self.client.files.upload(file=file_path)
+            with open(file_path, "rb") as f:
+                audio_bytes = f.read()
+
+            if not audio_bytes:
+                return None
+
+            candidate_models = ["gemini-3.8-flash", "gemini-flash-latest"]
+            if self.model_name and self.model_name not in candidate_models:
+                candidate_models.insert(0, self.model_name)
+
+            if hasattr(self.client, "models"):
+                from google.genai import types
+                part = types.Part.from_bytes(data=audio_bytes, mime_type=mime_type)
+
                 for model in candidate_models:
                     try:
                         response = self.client.models.generate_content(
                             model=model,
-                            contents=[uploaded, prompt]
+                            contents=[part, prompt]
                         )
                         if response and response.text:
-                            return response.text.strip()
+                            transcript = response.text.strip()
+                            if transcript:
+                                return transcript
                     except Exception as model_err:
                         logger.warning(f"Model {model} transkripsiyasida xato ({model_err}), keyingisi tekshirilmoqda...")
                         continue
+
             elif self.client == "legacy":
                 import google.generativeai as legacy_genai
-                uploaded = legacy_genai.upload_file(path=file_path)
                 for model in candidate_models:
                     try:
                         m_obj = legacy_genai.GenerativeModel(model)
-                        response = m_obj.generate_content([uploaded, prompt])
+                        response = m_obj.generate_content([
+                            {"mime_type": mime_type, "data": audio_bytes},
+                            prompt
+                        ])
                         if response and response.text:
                             return response.text.strip()
                     except Exception as model_err:
@@ -274,12 +297,6 @@ REASON: Bir jumla bilan sababi (o'zbekcha)
                         continue
         except Exception as e:
             logger.error(f"Ovozli xabarni transkripsiya qilishda xatolik: {e}")
-        finally:
-            if uploaded and hasattr(self.client, "files") and hasattr(uploaded, "name"):
-                try:
-                    self.client.files.delete(name=uploaded.name)
-                except Exception:
-                    pass
 
         return None
 
@@ -308,7 +325,7 @@ REASON: Sababi (o'zbekcha qisqa)
                         reason = line.split(":", 1)[1].strip()
                 return True, reason or "Spam deb baholandi"
         except Exception as e:
-            logger.debug(f"Spam tekshiruvida xatolik: {e}")
+            logger.debug(f"Spam tekshiruvida xato: {e}")
 
         return False, ""
 
@@ -329,7 +346,13 @@ REASON: Sababi (o'zbekcha qisqa)
         if not self.client:
             return ""
 
-        if not message_text and (not media_path or not os.path.exists(media_path)):
+        is_voice = bool(media_path and os.path.exists(media_path))
+
+        # Agar ovozli xabar bo'lsa va matn hali transkripsiya qilinmagan bo'lsa, o'zimiz transkripsiya qilamiz
+        if is_voice and not message_text:
+            message_text = await self.transcribe_voice(media_path) or ""
+
+        if not message_text and not is_voice:
             return ""
 
         context_str = ""
@@ -353,17 +376,16 @@ REASON: Sababi (o'zbekcha qisqa)
         if etiquette_rules and etiquette_rules.strip():
             etiquette_block = f"\nAMALDAGI GAPIRISH ODOBI VA AXLOQ QOIDALARI:\n{etiquette_rules.strip()}\n"
 
-        is_voice = bool(media_path and os.path.exists(media_path))
         if is_voice:
             if message_text:
-                media_info = f"Suhbatdosh ({sender_name}) ovozli xabar yubordi. Undagi so'zlar: \"{message_text}\""
+                media_info = f"Suhbatdosh ({sender_name}) sizga quyidagi mazmundagi OVOZLI XABAR (audio) yubordi:\n\"{message_text}\""
             else:
-                media_info = f"Suhbatdosh ({sender_name}) ovozli xabar yubordi. Iltimos, biriktirilgan audio fayldagi gaplarni tinglab javob bering."
+                media_info = f"Suhbatdosh ({sender_name}) ovozli xabar yubordi."
         else:
             media_info = f"Hozir sizga {sender_name} quyidagi xabarni yozdi:\n\"{message_text}\""
 
         prompt = f"""
-Siz {owner_info} Telegramda kelgan xabarlarga javob beruvchi aqlli va samimiy shaxsiy AI yordamchisiz.
+Siz {owner_info} Telegramda kelgan xabarlarga javob beruvchi aqlli, xushmuomala va samimiy shaxsiy AI yordamchisiz.
 
 {context_str}{media_info}
 {custom_block}{etiquette_block}
@@ -372,24 +394,18 @@ Ushbu xabarga tabiiy, samimiy, insoniylikni saqlagan holda mos va to'g'ri javob 
 
 Qoidalar:
 1. Belgilangan gapirish odobi va axloq qoidalariga qat'iy rioya qiling.
-2. Suhbatdosh qaysi tilda gapirgan/yozgan bo'lsa (o'zbek, rus, ingliz va h.k.), xuddi o'sha tilda javob qaytaring.
-3. Javobingiz Telegram chatiga mos bo'lsin: ixcham, lo'nda, samimiy va ortiqcha cho'zmasdan.
-4. Agar u salom bersa yoki oddiy hol-ahvol so'rasa, muloyim alik oling va nima yordam bera olishingizni bildiring.
-5. Agar savol bersa, aniq va foydali javob bering.
-6. Agar shaxsiy sir, parol, pul, to'lov yoki faqat {owner_name or 'akkaunt egasi'}ning o'zi hal qila oladigan muhim masala so'ralsa, siz AI yordamchisi ekanligingizni va xabarni unga yetkazishingizni, tez orada o'zi bog'lanishini muloyim tushuntiring.
-7. Hech qachon o'zingizdan yolg'on fakt yoki quruq va'dalar to'qimang.
-8. Faqat to'g'ridan-to'g'ri yuboriladigan javob matnini yozing. Hech qanday "Javob:", "Assistent:" yoki qo'shtirnoq kabi keraksiz so'zlarni qo'shmang.
+2. Agar suhbatdosh ovozli xabar yuborgan bo'lsa, uning ovozli xabarida aytgan/so'ragan masalalariga to'liq, muloyim va mazmunli javob qaytaring.
+3. Suhbatdosh qaysi tilda gapirgan/yozgan bo'lsa (o'zbek, rus, ingliz va h.k.), xuddi o'sha tilda javob qaytaring.
+4. Javobingiz Telegram chatiga mos bo'lsin: ixcham, lo'nda, samimiy va ortiqcha cho'zmasdan.
+5. Agar u salom bersa yoki oddiy hol-ahvol so'rasa, muloyim alik oling va nima yordam bera olishingizni bildiring.
+6. Agar savol bersa, aniq va foydali javob bering.
+7. Agar shaxsiy sir, parol, pul, to'lov yoki faqat {owner_name or 'akkaunt egasi'}ning o'zi hal qila oladigan muhim masala so'ralsa, siz AI yordamchisi ekanligingizni va xabarni unga yetkazishingizni, tez orada o'zi bog'lanishini muloyim tushuntiring.
+8. Hech qachon o'zingizdan yolg'on fakt yoki quruq va'dalar to'qimang.
+9. Faqat to'g'ridan-to'g'ri yuboriladigan javob matnini yozing. Hech qanday "Javob:", "Assistent:" yoki qo'shtirnoq kabi keraksiz so'zlarni qo'shmang.
 """
 
-        uploaded = None
         try:
-            contents = prompt
-            # Agar audio fayl mavjud bo'lsa va matn transkripsiyasi bo'lmasa, audioni Gemini'ga yuklash
-            if is_voice and not message_text and hasattr(self.client, "files"):
-                uploaded = self.client.files.upload(file=media_path)
-                contents = [uploaded, prompt]
-
-            reply = await self._call_gemini_contents(contents)
+            reply = await self._call_gemini_contents(prompt)
             cleaned = reply.strip()
             if cleaned.startswith('"') and cleaned.endswith('"'):
                 cleaned = cleaned[1:-1].strip()
@@ -399,12 +415,7 @@ Qoidalar:
         except Exception as e:
             logger.error(f"Auto-reply yaratishda xatolik: {e}")
             return ""
-        finally:
-            if uploaded and hasattr(self.client, "files") and hasattr(uploaded, "name"):
-                try:
-                    self.client.files.delete(name=uploaded.name)
-                except Exception:
-                    pass
+
 
     async def parse_user_info(self, text: str) -> Optional[Dict[str, Any]]:
         """

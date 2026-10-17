@@ -695,6 +695,18 @@ def register_command_handlers(client: TelegramClient, db: Database, ai_service: 
 
             text = (event.raw_text or "").strip()
 
+            # Agar ovozli xabar yoki audio bo'lsa, uni avval matnga o'giramiz
+            if event.voice or event.audio or getattr(event, "video_note", False):
+                try:
+                    ext = ".ogg" if event.voice else (".mp4" if getattr(event, "video_note", False) else ".mp3")
+                    temp_audio = os.path.join(config.MEDIA_STORAGE_DIR, f"bot_{abs(event.chat_id)}_{event.id}{ext}")
+                    await event.download_media(file=temp_audio)
+                    voice_text = await ai_service.transcribe_voice(temp_audio)
+                    if voice_text:
+                        text = voice_text
+                except Exception as e:
+                    logger.warning(f"Botda ovozli xabarni transkripsiya qilishda xato: {e}")
+
             # -------------------------------------------------------------
             # A) AKKAUNT EGASI (MY_TELEGRAM_ID):
             # -------------------------------------------------------------
